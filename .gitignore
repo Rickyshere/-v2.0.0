@@ -1,0 +1,51 @@
+# ============================================================
+# 普速铁路中转方案 —— Git 忽略规则
+# ============================================================
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# ---- 虚拟环境 ----
+venv/
+.venv/
+env/
+ENV/
+.python-version
+
+# ---- 日志与临时文件 ----
+*.log
+*.tmp
+*.bak
+*.orig
+*.swp
+*~
+
+# ---- 编辑器 / 操作系统 ----
+.vscode/
+.idea/
+*.sublime-*
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- 说明 ----
+# 以下文件是项目数据，**故意纳入版本管理**，不要忽略：
+#   stations.csv / lines.csv      由 upgrade_data.py 生成的站点表与连接表
+#   extra_coords.json             在线补全 / 人工修正的坐标缓存
+#   station_codes.csv             站名 → 12306 电报码对照表
+#   station_name.js               12306 原始站点数据（重新生成电报码时用）
+#
+# 本项目**不含任何 API Key**：百度 / 高德的 Key 一律走系统环境变量
+# （BAIDU_AK / AMAP_KEY / BAIDU_SK），请勿把 Key 写进代码或配置文件后提交。
+
+# ---- 前端测试的可选依赖（见 tests/frontend/README.md）----
+tests/frontend/.testenv/
+tests/frontend/node_modules/

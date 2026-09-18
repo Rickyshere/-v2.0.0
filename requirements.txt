@@ -1,0 +1,25 @@
+# ============================================================
+# 普速铁路中转方案 - Python 依赖清单
+#
+# 安装命令：
+#     pip install -r requirements.txt
+# ============================================================
+
+# --- Web 后端 ---
+fastapi>=0.110.0        # 提供 REST API 与自动文档
+uvicorn>=0.29.0         # ASGI 服务器，用于运行 FastAPI 应用
+pydantic>=2.0.0         # FastAPI 数据校验依赖（间接需要）
+
+# --- HTTP 客户端（12306 车次查询） ---
+requests>=2.31.0        # 访问 12306 余票查询接口 / OpenStreetMap
+
+# --- 数据处理 / 图算法 ---
+networkx>=3.2           # 构建铁路网络图并运行 Dijkstra 最短路径
+pandas>=2.0.0           # 数据处理（用于 CSV 读取 / 数据整理）
+
+# --- 数据文件生成脚本 ---
+# 无额外第三方依赖（仅使用标准库 csv/math/random）
+
+# --- 真实数据升级脚本（upgrade_data.py，仅在该脚本运行时需要） ---
+overpy>=0.6             # 访问 OpenStreetMap Overpass API，提取真实铁路数据
+

@@ -1,0 +1,2217 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>普速铁路中转方案</title>
+
+  <!-- Leaflet CSS / JS -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --primary: #2b6cb0;
+      --primary-dark: #2c5282;
+      --bg: #eef2f7;
+      --card: #ffffff;
+      --line: #e2e8f0;
+      --muted: #718096;
+      --green: #38a169;
+      --red: #e53e3e;
+      --blue: #2b6cb0;
+    }
+
+    html, body { height: 100%; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
+        "Microsoft YaHei", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: #1a202c;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      padding: 14px 24px;
+      background: var(--card);
+      border-bottom: 1px solid var(--line);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+      flex-shrink: 0;
+    }
+
+    .header-top { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+    h1 { font-size: 22px; font-weight: 700; color: var(--primary); }
+    .subtitle { color: var(--muted); font-size: 13px; }
+    /* 普速 / 高速 页面切换 */
+    .mode-tabs { margin-left: auto; display: flex; gap: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+    .mode-tab {
+      background: #fff; color: var(--muted); border: none; border-radius: 0;
+      padding: 6px 16px; font-size: 13px; cursor: pointer; font-weight: 500;
+    }
+    .mode-tab + .mode-tab { border-left: 1px solid var(--line); }
+    .mode-tab.active { background: var(--primary); color: #fff; }
+    .mode-tab:hover:not(.active) { background: #f7fafc; }
+    .mode-note {
+      font-size: 12px; color: var(--muted); margin-top: 6px; line-height: 1.6;
+    }
+    .mode-note b { color: var(--primary); }
+
+    .search-form {
+      display: flex; gap: 10px; align-items: flex-end;
+      flex-wrap: wrap; margin-top: 10px;
+    }
+    .field { display: flex; flex-direction: column; }
+    .field label { font-size: 12px; color: var(--muted); margin-bottom: 4px; font-weight: 500; }
+    .field input, .field select {
+      padding: 9px 12px; border: 1px solid #cbd5e0; border-radius: 8px;
+      font-size: 14px; background: #fff; min-width: 130px;
+    }
+    .field input:focus, .field select:focus {
+      outline: none; border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(43, 108, 176, 0.15);
+    }
+
+    button {
+      padding: 9px 26px; background: var(--primary); color: #fff;
+      border: none; border-radius: 8px; font-size: 14px; cursor: pointer;
+      transition: background 0.2s, transform 0.1s; white-space: nowrap;
+    }
+    button:hover { background: var(--primary-dark); }
+    button:active { transform: scale(0.98); }
+    button:disabled, button.loading { background: #a0aec0; cursor: not-allowed; }
+
+    main {
+      flex: 1; display: flex; min-height: 0;
+      padding: 12px 16px; gap: 12px;
+    }
+
+    /* 左侧地图 */
+    .map-pane {
+      flex: 0 0 58%;
+      background: var(--card); border-radius: 12px; overflow: hidden;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08); position: relative;
+    }
+    #map { width: 100%; height: 100%; }
+    .map-tag {
+      position: absolute; top: 10px; left: 10px; z-index: 500;
+      background: rgba(255,255,255,0.92); padding: 6px 12px; border-radius: 8px;
+      font-size: 12px; color: var(--muted);
+      box-shadow: 0 1px 4px rgba(0,0,0,0.15); pointer-events: none;
+    }
+
+    /* 右侧 */
+    .side-pane {
+      flex: 1; display: flex; flex-direction: column;
+      min-width: 0; gap: 12px; overflow: hidden;
+    }
+    .panel {
+      background: var(--card); border-radius: 12px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+      display: flex; flex-direction: column; min-height: 0;
+    }
+    .panel-title {
+      padding: 12px 16px; font-weight: 600; font-size: 15px;
+      color: #2d3748; border-bottom: 1px solid var(--line);
+    }
+    .route-list {
+      flex: 1; overflow-y: auto; padding: 12px;
+      display: flex; flex-direction: column; gap: 12px;
+    }
+
+    .route-card {
+      border: 2px solid var(--line); border-radius: 10px;
+      padding: 12px 14px; cursor: pointer;
+      transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+      background: #fafbfc;
+    }
+    .route-card:hover { box-shadow: 0 2px 10px rgba(0,0,0,0.08); }
+    .route-card.active {
+      border-color: var(--primary); background: #f7fbff;
+      box-shadow: 0 2px 12px rgba(43,108,176,0.15);
+    }
+    .rc-head {
+      display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px;
+    }
+    .rc-left { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .rc-badge {
+      width: 24px; height: 24px; border-radius: 50%; color: #fff;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; font-weight: 700; flex-shrink: 0;
+    }
+    .rc-distance { font-size: 17px; font-weight: 700; color: var(--primary); }
+    .rc-station-count { font-size: 12px; color: var(--muted); }
+    .rc-tag {
+      font-size: 11px; color: var(--green); font-weight: 600;
+      border: 1px solid #c6f6d5; background: #f0fff4;
+      padding: 2px 8px; border-radius: 20px;
+    }
+    .rc-transfer { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+    .rc-transfer b { color: var(--blue); }
+
+    .rc-lines { display: flex; flex-direction: column; gap: 6px; }
+    .rc-line-group {
+      display: flex; align-items: center; gap: 6px; flex-wrap: nowrap;
+      background: #f1f5f9; border-radius: 8px; padding: 5px 8px;
+    }
+    .rc-line-chip {
+      flex-shrink: 0; font-size: 11px; font-weight: 700; color: #fff;
+      border-radius: 6px; padding: 2px 8px; white-space: nowrap;
+      max-width: 90px; overflow: hidden; text-overflow: ellipsis;
+    }
+    .rc-line-segs {
+      display: flex; flex-wrap: wrap; gap: 2px; align-items: center; min-width: 0;
+    }
+    .st {
+      background: #edf2f7; border-radius: 6px; padding: 1px 7px;
+      font-size: 12px; white-space: nowrap;
+    }
+    .st.tf { background: #ebf8ff; color: var(--blue); border: 1px solid #bee3f8; }
+    .st.start { background: #c6f6d5; color: #22543d; font-weight: 600; }
+    .st.end { background: #fed7d7; color: #742a2a; font-weight: 600; }
+    .sep-arrow { color: #cbd5e0; font-size: 11px; }
+
+    .loading-text, .empty-text {
+      color: var(--muted); font-size: 13px;
+      padding: 20px; text-align: center;
+    }
+
+    #errorBox {
+      margin: 10px 16px 0; background: #fff5f5; border: 1px solid #feb2b2;
+      color: #c53030; border-radius: 10px; padding: 12px 16px;
+      font-size: 14px; display: none; flex-shrink: 0;
+    }
+
+    /* ===== 线路管理（独立弹窗） ===== */
+    .line-modal {
+      position: fixed; inset: 0; z-index: 3000;
+      background: rgba(20, 30, 45, 0.45);
+      display: flex; align-items: center; justify-content: center;
+      padding: 20px;
+    }
+    .line-modal-box {
+      background: var(--card); border-radius: 14px; width: 100%;
+      max-width: 720px; max-height: 88vh; overflow: hidden;
+      display: flex; flex-direction: column;
+      box-shadow: 0 20px 50px rgba(0,0,0,0.25);
+    }
+    .line-modal-head {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 18px; border-bottom: 1px solid var(--line);
+    }
+    .line-modal-title { font-weight: 700; font-size: 16px; color: var(--primary-dark); }
+    .line-modal-close {
+      padding: 2px 10px; font-size: 16px; line-height: 1;
+      background: transparent; color: var(--muted); border-radius: 8px;
+    }
+    .line-modal-close:hover { background: #f1f5f9; color: var(--red); }
+    .line-modal-hint {
+      padding: 10px 18px 0; font-size: 12px; color: var(--muted); line-height: 1.6;
+    }
+    .line-modal-hint code {
+      background: #edf2f7; padding: 1px 5px; border-radius: 4px;
+      font-family: Consolas, Monaco, monospace; color: #2d3748;
+    }
+    .line-actions { padding: 12px 18px 0; display: flex; gap: 8px; flex-wrap: wrap; }    .line-actions button { flex: 1; min-width: 130px; font-size: 13px; padding: 9px 12px; }
+    .line-opt { padding: 14px 18px 0; }
+    .line-opt label {
+      display: flex; align-items: flex-start; gap: 7px;
+      font-size: 13px; color: #2d3748; cursor: pointer; line-height: 1.5;
+    }
+    .line-opt input[type="checkbox"] {
+      width: 15px; height: 15px; margin-top: 2px;
+      flex-shrink: 0; cursor: pointer; accent-color: #38a169;
+    }
+    .line-opt-hint { font-size: 11px; color: var(--muted); margin: 5px 0 0 22px; line-height: 1.6; }
+    .line-opt-hint.warn { color: #c05621; }
+    .line-opt-hint.ok { color: var(--green); }
+    .line-opt-title { font-size: 13px; color: #2d3748; font-weight: 500; }
+    .line-opt-title + .line-opt-hint { margin-left: 0; }
+    .same-city-detail { margin: 6px 0 0 0; font-size: 11px; color: var(--muted); }
+    .same-city-detail summary { cursor: pointer; color: var(--primary); }
+    .same-city-list {
+      margin-top: 6px; max-height: 150px; overflow-y: auto;
+      background: #fafbfc; border: 1px solid var(--line); border-radius: 6px;
+      padding: 6px 9px; line-height: 1.8;
+    }
+    .same-city-list .far { color: #c05621; }
+    #lineEditor {
+      width: calc(100% - 36px); margin: 12px 18px 0; min-height: 200px;
+      border: 1px solid #cbd5e0; border-radius: 8px; padding: 10px 12px;
+      font-size: 12px; font-family: Consolas, Monaco, Menlo, monospace;
+      line-height: 1.6; resize: vertical; background: #fafbfc; color: #2d3748;
+    }
+    #lineEditor:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(43,108,176,0.15); }
+    .line-feedback { padding: 12px 18px 16px; font-size: 12px; color: var(--muted); white-space: pre-wrap; }
+
+    /* ===== 线路总览（地图直绘 + 图例） ===== */
+    .ov-legend {
+      position: absolute; top: 48px; right: 12px; z-index: 1100;
+      background: var(--card); border: 1px solid var(--line);
+      border-radius: 10px; padding: 10px 12px;
+      max-height: calc(100% - 70px); overflow-y: auto;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.12); min-width: 170px;
+    }
+        .ov-legend-title {
+      font-size: 13px; font-weight: 700; color: var(--primary-dark);
+      padding-bottom: 6px; margin-bottom: 6px; border-bottom: 1px solid var(--line);
+      display: flex; align-items: center; justify-content: space-between; gap: 6px;
+    }
+    .ov-legend-ctrls { display: flex; gap: 4px; }
+    .ov-legend-ctrl {
+      font-size: 11px; padding: 2px 8px; border: 1px solid #cbd5e0;
+      border-radius: 6px; background: #fff; color: var(--primary-dark);
+      cursor: pointer; font-weight: 600;
+    }
+    .ov-legend-ctrl:hover { background: var(--primary); color: #fff; border-color: var(--primary); }
+    .ov-legend-item {
+      display: flex; align-items: center; gap: 6px; font-size: 12px;
+      padding: 3px 4px; cursor: pointer; color: #2d3748; border-radius: 4px;
+    }
+    .ov-legend-item:hover { background: #f1f5f9; }
+    .ov-legend-item.off { opacity: 0.35; text-decoration: line-through; }
+    .ov-legend-swatch { width: 16px; height: 4px; border-radius: 3px; flex-shrink: 0; }
+    .ov-legend-name { white-space: nowrap; }
+    .ov-legend-warn {
+      margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line);
+      font-size: 11px; line-height: 1.6; color: #c05621; max-width: 220px;
+      white-space: normal;
+    }
+
+    /* ===== 车次查询区块 ===== */
+    .rc-tickets { margin-top: 8px; border-top: 1px dashed var(--line); padding-top: 8px; }
+    .rc-tickets-title { font-size: 12px; font-weight: 600; color: #2d3748; margin-bottom: 6px; }
+    .rc-seg-row {
+      display: flex; align-items: center; gap: 8px; flex-wrap: nowrap;
+      background: #f1f5f9; border-radius: 8px; padding: 5px 8px; margin-bottom: 6px;
+    }
+    .rc-seg-stations {
+      flex: 1; min-width: 0; font-size: 13px; color: #2d3748;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .rc-seg-stations b { color: var(--primary); }
+    .rc-date-input {
+      padding: 4px 6px; border: 1px solid #cbd5e0; border-radius: 6px;
+      font-size: 12px; background: #fff; flex-shrink: 0;
+    }
+    .rc-seg-btn {
+      padding: 5px 14px; font-size: 12px; background: var(--primary);
+      border-radius: 6px; flex-shrink: 0;
+    }
+    .rc-seg-btn.loading { background: #a0aec0; cursor: not-allowed; }
+    .rc-seg-trains {
+      margin: 4px 0 8px; display: none; flex-direction: column; gap: 4px;
+      max-height: 220px; overflow-y: auto;
+    }
+    .rc-seg-trains.show { display: flex; }
+    .rc-train-row {
+      display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+      font-size: 13px; padding: 5px 10px; border-radius: 6px;
+      background: #fff; border: 1px solid var(--line);
+    }
+    .rc-train-no { font-weight: 700; color: var(--primary); flex-shrink: 0; min-width: 58px; }
+    .rc-train-time { flex-shrink: 0; color: #2d3748; }
+    .rc-train-dur { color: var(--muted); font-size: 12px; flex-shrink: 0; }
+    /* 动态加站表单 */
+    .add-station-row {
+      display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+      margin: 4px 0 0;
+    }
+    .add-station-row input {
+      flex: 1 1 100px; min-width: 84px; font-size: 12px; padding: 5px 7px;
+      border: 1px solid var(--line); border-radius: 5px;
+    }
+    .add-station-row select {
+      font-size: 12px; padding: 5px 6px;
+      border: 1px solid var(--line); border-radius: 5px; background: #fff;
+    }
+    .add-station-row button { flex: 0 0 auto; font-size: 12px; padding: 6px 14px; }
+    #addStationHint.ok { color: var(--green); }
+    #addStationHint.err { color: #c53030; }
+
+    /* 折叠式票价：默认收起，点击展开 */
+    .rc-price-fold { flex-basis: 100%; margin: 3px 0 0 24px; font-size: 11px; }
+    .recommend-box .rc-price-fold { margin-left: 0; }
+    .rc-price-fold > summary {
+      cursor: pointer; color: var(--primary); display: inline-block;
+      list-style: none; user-select: none;
+    }
+    .rc-price-fold > summary::-webkit-details-marker { display: none; }
+    .rc-price-fold > summary::before { content: "▸ "; }
+    .rc-price-fold[open] > summary::before { content: "▾ "; }
+    .rc-price-fold-body { display: flex; flex-wrap: wrap; gap: 4px 8px; margin-top: 4px; }
+
+    /* 推荐方案面板 */
+    .recommend-box {
+      margin: 10px 0; padding: 10px 12px; border: 1px solid #f6e05e;
+      background: #fffff0; border-radius: 8px; font-size: 13px;
+    }
+    .recommend-box h4 { margin: 0 0 6px; font-size: 13px; color: #975a16; }
+    .recommend-box .rc-row {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+      padding: 4px 0; border-top: 1px dashed #f6e05e;
+    }
+    .recommend-box .rc-row:first-of-type { border-top: none; }
+    .recommend-box .rc-tag {
+      font-size: 11px; padding: 1px 6px; border-radius: 3px;
+      background: #fefcbf; color: #744210; border: 1px solid #f6e05e;
+    }
+    .recommend-box .rc-tag.transfer { background: #e6fffa; color: #234e52; border-color: #81e6d9; }
+    .recommend-box .rc-train { font-weight: 700; color: var(--primary); }
+    .recommend-box .rc-muted { color: var(--muted); font-size: 12px; }
+    .recommend-box .rc-err { color: #c05621; }
+    .pin-kind {
+      font-size: 10px; padding: 1px 5px; border-radius: 3px; flex-shrink: 0;
+      background: #edf2f7; color: #4a5568; border: 1px solid #cbd5e0;
+    }
+    .pin-kind.hsr { background: #ebf8ff; color: #2b6cb0; border-color: #90cdf4; }
+    .rc-train-book { margin-left: auto; font-size: 12px; font-weight: 600; flex-shrink: 0; }
+    .rc-train-book.yes { color: var(--green); }
+    .rc-train-book.no { color: var(--red); }
+    /* 票价标签：勾选「增加票价查询功能」后出现 */
+    .rc-train-price {
+      flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 4px 8px;
+      margin: 4px 0 0 24px; font-size: 11px; color: var(--muted);
+    }
+    .rc-price-item {
+      display: inline-flex; align-items: center; gap: 2px;
+      background: #f0f5ff; border: 1px solid #c3dafe; border-radius: 4px;
+      padding: 1px 5px; white-space: nowrap;
+    }
+    .rc-price-item b { color: #c05621; font-weight: 700; }
+    .rc-price-item sup { color: #3182ce; cursor: help; }
+    .rc-train-note { font-size: 11px; color: var(--muted); padding: 2px 10px; }
+
+    /* ===== 直达优先 & 自定义区间 ===== */
+    .rc-direct {
+      margin-bottom: 8px; border: 1px solid #bee3f8; border-radius: 8px;
+      background: #f0fcff; padding: 8px 10px;
+    }
+    .rc-direct-title { font-size: 12px; font-weight: 700; color: #2c5282; margin-bottom: 6px; }
+    .rc-direct .rc-seg-stations b { color: #2c5282; }
+    .rc-direct .rc-seg-btn { background: #2f855a; }
+    .rc-direct-bar { font-size: 11px; font-weight: 600; color: #2f855a; }
+
+    .rc-range {
+      margin-top: 8px; border-top: 1px dashed var(--line); padding-top: 8px;
+    }
+    .rc-range-title { font-size: 12px; font-weight: 600; color: #2d3748; margin-bottom: 6px; }
+    .rc-range-row {
+      display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 6px;
+    }
+    .rc-range-select {
+      padding: 5px 6px; border: 1px solid #cbd5e0; border-radius: 6px;
+      font-size: 12px; background: #fff; min-width: 90px; max-width: 150px;
+    }
+
+    /* ===== 已选车次（勾选钉住，跨查询保留） ===== */
+    .pinned-panel { flex-shrink: 0; max-height: 46%; }
+    .pinned-panel.collapsed { max-height: none; }
+    .pinned-panel.collapsed .pinned-list { display: none; }
+    .pinned-title {
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    }
+    .pinned-title-left { display: flex; align-items: center; gap: 6px; }
+    .pinned-count {
+      background: var(--primary); color: #fff; border-radius: 10px;
+      padding: 0 7px; font-size: 12px; line-height: 18px;
+      min-width: 18px; text-align: center;
+    }
+    .pinned-actions { display: flex; gap: 6px; }
+    .pinned-mini {
+      padding: 2px 9px; font-size: 11px; font-weight: 600; border-radius: 6px;
+      background: #edf2f7; color: var(--primary-dark); border: 1px solid #e2e8f0;
+    }
+    .pinned-mini:hover { background: var(--primary); color: #fff; border-color: var(--primary); }
+    .pinned-mini.danger { color: var(--red); }
+    .pinned-mini.danger:hover { background: var(--red); border-color: var(--red); color: #fff; }
+    .pinned-list {
+      overflow-y: auto; padding: 10px 12px;
+      display: flex; flex-direction: column; gap: 10px;
+    }
+    .pinned-empty { font-size: 12px; color: var(--muted); line-height: 1.7; }
+    .pinned-empty b { color: var(--primary); }
+    .pin-group { display: flex; flex-direction: column; gap: 5px; }
+    .pin-group-head {
+      align-self: flex-start; font-size: 11px; font-weight: 700; color: #2c5282;
+      background: #f0fcff; border: 1px solid #bee3f8; border-radius: 6px; padding: 2px 8px;
+    }
+    .pin-card {
+      display: flex; align-items: center; gap: 8px; font-size: 13px;
+      padding: 6px 10px; border-radius: 8px; background: #fff;
+      border: 1px solid var(--line); border-left: 3px solid var(--green);
+    }
+    .pin-no { font-weight: 700; color: var(--primary); flex-shrink: 0; min-width: 54px; }
+    .pin-time { color: #2d3748; flex-shrink: 0; }
+    .pin-dur { color: var(--muted); font-size: 12px; flex-shrink: 0; }
+    .pin-book { font-size: 11px; font-weight: 600; flex-shrink: 0; }
+    .pin-book.yes { color: var(--green); }
+    .pin-book.no { color: var(--red); }
+    .pin-del {
+      margin-left: auto; padding: 1px 7px; font-size: 12px; line-height: 1.4;
+      background: transparent; color: var(--muted);
+      border-radius: 6px; border: 1px solid transparent;
+    }
+    .pin-del:hover { background: #fff5f5; color: var(--red); border-color: #feb2b2; }
+    .pin-chain {
+      font-size: 12px; font-weight: 600; color: #2f855a; line-height: 2;
+      background: #f5fff7; border: 1px dashed #9ae6b4;
+      border-radius: 8px; padding: 6px 10px;
+    }
+    .pin-chain b { color: #276749; }
+    .rc-train-row { cursor: pointer; }
+    .rc-train-row.pinned { background: #f5fff7; border-color: #9ae6b4; }
+    .rc-train-check {
+      flex-shrink: 0; width: 15px; height: 15px; margin: 0 2px 0 0;
+      cursor: pointer; accent-color: #38a169;
+    }
+
+    .palette {
+      display: flex; flex-wrap: wrap; gap: 8px;
+      padding: 0 16px 12px; font-size: 11px; color: var(--muted);
+    }
+    .palette .item { display: flex; align-items: center; gap: 4px; }
+    .palette .swatch { width: 18px; height: 4px; border-radius: 2px; display: inline-block; }
+
+    footer {
+      flex-shrink: 0; padding: 10px 24px; text-align: center;
+      background: var(--card); border-top: 1px solid var(--line);
+      color: var(--muted); font-size: 13px;
+    }
+    footer .disc { font-weight: 600; color: #d69e2e; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="header-top">
+      <h1 id="appTitle">🚂 普速铁路中转方案</h1>
+      <span class="subtitle" id="appSubtitle">多种计划 · 分列换乘 · 地图可视</span>
+      <div class="mode-tabs" id="modeTabs">
+        <button class="mode-tab active" data-mode="slow">普速列车</button>
+        <button class="mode-tab" data-mode="hsr">高速动车组</button>
+      </div>
+    </div>
+    <div class="mode-note" id="modeNote"></div>
+    <div class="search-form">
+      <div class="field">
+        <label for="startInput">起点（站名 / 城市）</label>
+        <input type="text" id="startInput" placeholder="如：北京" value="北京" />
+      </div>
+      <div class="field">
+        <label for="endInput">终点（站名 / 城市）</label>
+        <input type="text" id="endInput" placeholder="如：广州" value="广州" />
+      </div>
+      <div class="field">
+        <label for="viaInput">定制中转（逗号分隔，可空）</label>
+        <input type="text" id="viaInput" placeholder="如：武汉,郑州（强制经停）" style="min-width:180px" />
+      </div>
+      <div class="field">
+        <label for="kInput">方案数</label>
+        <select id="kInput">
+          <option value="1">1 条</option>
+          <option value="2">2 条</option>
+          <option value="3" selected>3 条</option>
+          <option value="4">4 条</option>
+        </select>
+      </div>
+      <div class="field" style="flex-direction:row; align-items:center; gap:6px;">
+        <label for="upgradeInput" style="margin-bottom:0; display:flex; align-items:center; gap:5px; cursor:pointer;">
+          <input type="checkbox" id="upgradeInput" />
+          <span>小站省会化</span>
+        </label>
+      </div>
+      <div class="field" style="flex-direction:row; align-items:center; gap:6px;">
+        <label for="priceInput" style="margin-bottom:0; display:flex; align-items:center; gap:5px; cursor:pointer;"
+               title="勾选后车次列表会附带票价（硬座 / 硬卧 / 软卧 / 二等座 等）。票价来自 12306 同一次返回，不额外增加请求。">
+          <input type="checkbox" id="priceInput" />
+          <span>增加票价查询功能</span>
+        </label>
+      </div>
+      <button id="searchBtn">查询方案</button>
+      <button id="recommendBtn" style="background:#b7791f;">推荐方案</button>
+      <button id="openLineBtn" style="background:#805ad5;">线路管理</button>
+      <button id="openOvBtn" style="background:#2f855a;">线路总览</button>
+    </div>
+  </header>
+
+  <div id="errorBox"></div>
+
+  <main>
+    <!-- 左侧地图 -->
+    <section class="map-pane">
+      <div class="map-tag">点击右侧方案 · 地图高亮对应线路</div>
+      <div id="map"></div>
+      <div class="ov-legend" id="ovLegend" style="display:none;"></div>
+    </section>
+
+    <!-- 右侧方案列表 -->
+    <section class="side-pane">
+      <div class="panel pinned-panel" id="pinnedPanel">
+        <div class="panel-title pinned-title">
+          <span class="pinned-title-left">
+            已选车次
+            <span class="pinned-count" id="pinnedCount">0</span>
+          </span>
+          <span class="pinned-actions">
+            <button class="pinned-mini" id="pinnedToggle">收起</button>
+            <button class="pinned-mini danger" id="pinnedClear">清空</button>
+          </span>
+        </div>
+        <div class="pinned-list" id="pinnedList"></div>
+      </div>
+
+      <div class="panel" style="flex:1;">
+        <div class="panel-title">中转方案</div>
+        <div class="recommend-box" id="recommendBox" style="display:none;"></div>
+        <div class="route-list" id="routeList">
+          <div class="empty-text">← 输入起止地点，点击「查询方案」</div>
+        </div>
+        <div class="palette" id="palette"></div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <span class="disc">⚠ 声明：</span>
+    本网站仅供设计中转方案使用，线路走向 / 换乘信息为简化示意，
+    实际列车运营与车次安排请以 <b>12306 官方网站</b> 为准。
+  </footer>
+
+  <!-- 线路管理：独立编辑界面 -->
+  <div class="line-modal" id="lineModal" style="display:none;">
+    <div class="line-modal-box">
+      <div class="line-modal-head">
+        <div class="line-modal-title">线路管理（本地铁路线）</div>
+        <button class="line-modal-close" id="closeLineBtn">✕</button>
+      </div>
+      <div class="line-modal-hint">
+        数据源：<code>main_railway_line.txt</code>。在此新增 / 修改铁路线，保存后立即生效，无需重启服务。
+      </div>
+      <div class="line-actions">
+        <button id="loadLineBtn" style="background:#3182ce;">加载线路</button>
+        <button id="rebuildBtn" style="background:#805ad5;">从文件重新生成</button>
+      </div>
+      <textarea id="lineEditor" spellcheck="false" placeholder="点击「加载线路」后，在此编辑线路清单，格式与 main_railway_line.txt 一致：
+
+线路名（连接：北京、广州）
+北京西站（特等）、石家庄站（一等）、郑州站（特等）、广州站（特等）
+
+可多行，每条线路建议用空行隔开。"></textarea>
+      <div class="line-actions">
+        <button id="saveLineBtn" style="background:#2f855a;">保存并重新生成</button>
+      </div>
+      <div class="line-opt">
+        <label for="autoCoordInput">
+          <input type="checkbox" id="autoCoordInput" />
+          <span>是否启用在线地理坐标补全，需提供百度地图开放平台服务端AK</span>
+        </label>
+        <div class="line-opt-hint" id="autoCoordHint"></div>
+      </div>
+      <div class="line-opt">
+        <div class="line-opt-title">同城异站归并</div>
+        <div class="line-opt-hint" id="sameCityHint"></div>
+        <details class="same-city-detail" id="sameCityDetail">
+          <summary>查看待确认的邻近站对</summary>
+          <div class="same-city-list" id="sameCityList"></div>
+        </details>
+      </div>
+      <div class="line-opt">
+        <div class="line-opt-title">铁路电报码</div>
+        <div class="line-opt-hint" id="stationCodeHint"></div>
+        <details class="same-city-detail">
+          <summary>查看没有电报码的站</summary>
+          <div class="same-city-list" id="stationCodeList"></div>
+        </details>
+      </div>
+      <div class="line-opt">
+        <div class="line-opt-title">动态加站（临时）</div>
+        <div class="add-station-row">
+          <input type="text" id="asName" placeholder="站名，如 芜湖东" />
+          <input type="text" id="asLon" placeholder="经度，如 118.42" />
+          <input type="text" id="asLat" placeholder="纬度，如 31.35" />
+          <select id="asGrade">
+            <option value="特等站">特等站</option>
+            <option value="一等站">一等站</option>
+            <option value="二等站" selected>二等站</option>
+            <option value="三等站">三等站</option>
+          </select>
+          <button id="addStationBtn" style="background:#2b6cb0;">加站</button>
+        </div>
+        <div class="line-opt-hint" id="addStationHint">
+          新站会作为独立节点接入<strong>最近的大城</strong>，从而参与算路。
+          ⚠ <strong>只在内存中生效，重启服务后失效</strong> ——
+          要长期保留请把该站写进 <code>main_railway_line.txt</code>。
+        </div>
+      </div>
+      <div class="line-feedback" id="lineFeedback"></div>
+    </div>
+  </div>
+
+
+  <script>
+    // ============ 全局状态 ============
+    let map = null;
+    let layerGroup = null;
+    let stationCoords = {};
+    let isMapInit = false;
+    let currentRoutes = [];
+    let activeIndex = 0;
+    let upgradeEnabled = false;
+
+    // ============ 页面模式：slow 普速列车 / hsr 高速动车组 ============
+    // 两个页面共用同一套渲染与交互逻辑，只切换「数据源 + 车次类别」，
+    // 从而保证"高速页面功能与普速页面完全一致"。
+    let appMode = "slow";
+    const isHsr = () => appMode === "hsr";
+    // 各接口在不同模式下的前缀
+    const apiBase = () => (isHsr() ? "/api/hsr" : "/api");
+    const trainKind = () => (isHsr() ? "hsr" : "slow");
+
+    function applyModeText() {
+      const hsr = isHsr();
+      const t = document.getElementById("appTitle");
+      const s = document.getElementById("appSubtitle");
+      const n = document.getElementById("modeNote");
+      if (t) t.textContent = hsr ? "🚄 高速动车组中转方案" : "🚂 普速铁路中转方案";
+      if (s) s.textContent = hsr ? "八纵八横通道 · 高铁 / 动车 / 城际" : "多种计划 · 分列换乘 · 地图可视";
+      if (n) {
+        n.innerHTML = hsr
+          ? "当前为<b>高速动车组</b>页面：路网依据《中长期铁路网规划》<b>八纵八横</b> 16 条主通道"
+            + "（车站级，含支线共 35 段 / 641 站），车次只查 <b>G / D / C</b> 字头。"
+            + "<br/><span style=\"color:#c05621\">⚠ 里程为相邻车站直线距离之和，比实际线路里程低约 5~15%；"
+            + "标为「（在建）」的 5 段尚未通车，<b>默认不参与算路</b>（避免给出查不到车次的方案）。</span>"
+          : "当前为<b>普速列车</b>页面：路网依据人工维护的 <code>main_railway_line.txt</code>（车站级），"
+            + "车次只查 <b>K / Z / T / Y / 纯数字</b>。";
+      }
+    }
+
+    async function setMode(mode) {
+      if (mode !== "slow" && mode !== "hsr") return;
+      if (mode === appMode) return;
+      appMode = mode;
+      document.querySelectorAll(".mode-tab").forEach((b) => {
+        b.classList.toggle("active", b.getAttribute("data-mode") === mode);
+      });
+      applyModeText();
+
+      // 切换后清空上一个网络的结果，避免两套方案混在一起
+      currentRoutes = [];
+      activeIndex = 0;
+      if (layerGroup) layerGroup.clearLayers();
+      if (ovActive) clearOvMap();
+      lineOverview = [];
+      const rl = document.getElementById("routeList");
+      if (rl) rl.innerHTML = '<div class="route-empty">切换页面后，请重新点击「查询方案」。</div>';
+      if (typeof closeLineModal === "function") closeLineModal();
+
+      await loadStations();
+    }
+
+    const PALETTE = ["#e53e3e", "#2b6cb0", "#38a169", "#dd6b20", "#805ad5"];
+
+    // ============ 初始化地图（高德底图，国内可访问） ============
+    function initMap() {
+      map = L.map("map").setView([34.5, 104.5], 4);
+
+      L.tileLayer(
+        "https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}",
+        { subdomains: "1234", maxZoom: 18 }
+      ).addTo(map);
+
+      layerGroup = L.layerGroup().addTo(map);
+    }
+
+    async function loadStations() {
+      try {
+        const url = isHsr() ? "/api/hsr/cities" : "/api/stations";
+        const resp = await fetch(url);
+        if (resp.ok) stationCoords = await resp.json();
+      } catch (e) {
+        console.warn("获取站点坐标失败", e);
+      }
+    }
+
+    // ============ 渲染所有方案到地图 ============
+    // 省会化开启时，地图上的站点/折线跟随 stations_upgraded 变化
+    function effectiveStations(route) {
+      const names = upgradeEnabled
+        ? (route.stations_upgraded || route.stations)
+        : route.stations;
+      // 去重连续相同站（省会化可能产生相邻同名，如 贵阳→贵阳）
+      const out = [];
+      names.forEach((s) => { if (out[out.length - 1] !== s) out.push(s); });
+      return out;
+    }
+
+    function renderRoutes(routes) {
+      layerGroup.clearLayers();
+
+      routes.forEach((route, idx) => {
+        const color = PALETTE[idx % PALETTE.length];
+        const isActive = idx === activeIndex;
+        const stations = effectiveStations(route);
+        const latlngs = [];
+
+        stations.forEach((name, i) => {
+          const c = stationCoords[name];
+          if (!c) return;
+          latlngs.push([c[1], c[0]]);
+
+          let dotColor = color, radius = 5;
+          if (i === 0) { dotColor = "#38a169"; radius = 7; }
+          else if (i === stations.length - 1) { dotColor = "#e53e3e"; radius = 7; }
+
+          L.circleMarker([c[1], c[0]], {
+            radius, color: dotColor, weight: 2,
+            fillColor: dotColor, fillOpacity: 0.85,
+          })
+            .addTo(layerGroup)
+            .bindPopup(
+              `<b style="color:${color}">方案 ${idx + 1}</b> · <b>${name}</b><br/>` +
+              `<span style="color:#718096">${i === 0 ? "起点站" : (i === stations.length - 1 ? "终点站" : "中转站")}</span>`
+            );
+        });
+
+        const line = L.polyline(latlngs, {
+          color, weight: isActive ? 5 : 3, opacity: isActive ? 0.95 : 0.35,
+        }).addTo(layerGroup);
+        line._routeIndex = idx;
+        line.on("click", () => setActiveRoute(idx));
+      });
+
+      // 视野缩放到推荐方案
+      const bounds = [];
+      effectiveStations(routes[0]).forEach((name) => {
+        const c = stationCoords[name];
+        if (c) bounds.push([c[1], c[0]]);
+      });
+      if (bounds.length) map.fitBounds(L.latLngBounds(bounds).pad(0.12));
+    }
+
+    function setActiveRoute(idx) {
+      if (!currentRoutes.length) return;
+      activeIndex = idx;
+      renderRoutes(currentRoutes);
+      document.querySelectorAll(".route-card").forEach((card, i) => {
+        card.classList.toggle("active", i === idx);
+      });
+    }
+
+    // ============ 渲染右侧方案卡片 ============
+    function renderRouteList(routes) {
+      const list = document.getElementById("routeList");
+      list.innerHTML = "";
+
+      // 调色板说明
+      const palette = document.getElementById("palette");
+      palette.innerHTML = "";
+      routes.forEach((r, i) => {
+        const item = document.createElement("span");
+        item.className = "item";
+        item.innerHTML =
+          `<span class="swatch" style="background:${PALETTE[i % PALETTE.length]}"></span>` +
+          `方案 ${i + 1}`;
+        palette.appendChild(item);
+      });
+
+      routes.forEach((route, idx) => {
+        const card = document.createElement("div");
+        card.className = "route-card" + (idx === activeIndex ? " active" : "");
+
+        const displayStations = upgradeEnabled
+          ? (route.stations_upgraded || route.stations)
+          : route.stations;
+
+        const ts = route.transfer_stations || [];
+        const transferText = ts.length
+          ? ts.map((t) => `<b>${t}</b>`).join("、")
+          : "直达，无需换乘";
+
+        card.innerHTML = `
+          <div class="rc-head">
+            <div class="rc-left">
+              <span class="rc-badge" style="background:${PALETTE[idx % PALETTE.length]}">${idx + 1}</span>
+              <span class="rc-distance">约 ${route.total_distance} 公里</span>
+              <span class="rc-station-count">· ${route.stations.length} 站</span>
+              ${route.recommended ? '<span class="rc-tag">最短</span>' : ""}
+            </div>
+          </div>
+          <div class="rc-transfer">换乘站：${transferText}</div>
+          <div class="rc-lines">${renderSegmentedPath(route, displayStations)}</div>
+          ${renderTicketSegments(route, idx)}
+        `;
+
+        card.addEventListener("click", () => setActiveRoute(idx));
+        list.appendChild(card);
+      });
+
+      renderPalette();
+    }
+
+    // 线路 -> 颜色 映射（固定常用线颜色，未知用灰蓝）
+    const LINE_COLORS = {
+      "京广线": "#e53e3e", "京九线": "#2b6cb0", "京沪线": "#38a169",
+      "陇海线": "#dd6b20", "沪昆线": "#805ad5", "京哈线": "#3182ce",
+      "焦柳线": "#d53f8c", "滨洲线": "#63b3ed", "平齐线": "#6b46c1",
+      "兰新线": "#c05621", "青藏线": "#2f855a", "南广线": "#d69e2e",
+      "南昆线": "#3f6212", "湘桂线": "#975a16", "鹰厦线": "#c53030",
+      "内六线": "#4c51bf", "通让线": "#2b6cb0", "图佳线": "#718096",
+      "滨绥线": "#38a169", "富西线": "#319795", "威红线": "#9b2c2c",
+    };
+    const LINE_FALLBACK = "#718096";
+
+    // 清洗线路名：去掉括号注释（如 "沪昆线（连接：...）" -> "沪昆线"）
+    function cleanLineName(raw) {
+      let n = (raw || "").trim();
+      const idx = n.indexOf("（");
+      if (idx > 0) n = n.substring(0, idx);
+      return n;
+    }
+    function lineColor(name) {
+      return LINE_COLORS[name] || LINE_FALLBACK;
+    }
+
+    // 把方案轨道按"线路分段"渲染成多个分组行
+    // display: 展示用的站名数组（省会化开启时替换为 stations_upgraded）
+    function renderSegmentedPath(route, display) {
+      const segs = route.segments || [];
+      const names = display || route.stations;
+      const startName = names[0];
+      const endName = names[names.length - 1];
+
+      if (!segs.length) {
+        // 无 segments 时退化为普通站点串
+        return names.map((s, i) => {
+          let cls = "st";
+          if (i === 0) cls += " start";
+          else if (i === names.length - 1) cls += " end";
+          return `<span class="${cls}">${s}</span>`;
+        }).join(' <span class="sep-arrow">→</span> ');
+      }
+
+      const ts = route.transfer_stations || [];
+      const groups = [];
+
+      segs.forEach((seg, i) => {
+        const line = cleanLineName((seg.lines && seg.lines[0]) || "未知");
+        const from = names[i];
+        const to = names[i + 1];
+        if (from === undefined || to === undefined) return;
+        const last = groups[groups.length - 1];
+        if (last && last.line === line) {
+          if (last.stations[last.stations.length - 1] !== from)
+            last.stations.push(from);
+          if (last.stations[last.stations.length - 1] !== to)
+            last.stations.push(to);
+        } else {
+          const arr = [from];
+          if (to !== from) arr.push(to);
+          groups.push({ line, stations: arr });
+        }
+      });
+
+      return groups.map((g) => {
+        const chip = `<span class="rc-line-chip" style="background:${lineColor(g.line)}">${g.line}</span>`;
+        const segHtml = g.stations.map((s, i) => {
+          let cls = "st";
+          if (i === 0 && g.stations[0] === startName) cls += " start";
+          else if (i === g.stations.length - 1 && s === endName) cls += " end";
+          else if (ts.includes(s)) cls += " tf";
+          const arrow = i < g.stations.length - 1 ? '<span class="sep-arrow">→</span>' : "";
+          return `<span class="${cls}">${s}</span>${arrow}`;
+        }).join("");
+        return `<div class="rc-line-group">${chip}<span class="rc-line-segs">${segHtml}</span></div>`;
+      }).join("");
+    }
+
+    function renderPalette() {
+      const palette = document.getElementById("palette");
+      palette.innerHTML = "";
+      currentRoutes.forEach((r, i) => {
+        const item = document.createElement("span");
+        item.className = "item";
+        item.innerHTML =
+          `<span class="swatch" style="background:${PALETTE[i % PALETTE.length]}"></span>` +
+          `方案 ${i + 1}`;
+        palette.appendChild(item);
+      });
+    }
+
+    // ============ 车次查询 ============
+    // 返回 YYYY-MM-DD 格式的日期字符串
+    function toDateStr(d) {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      return `${y}-${m}-${day}`;
+    }
+        // 今天 / 明天（默认查询明天，避免当天临近车次过少）
+    function defaultDate() {
+      return toDateStr(new Date(Date.now() + 24 * 3600 * 1000));
+    }
+
+    // 解析 "HH:MM"（可能 >24h，如 "34:18"）为总分钟数，用于比较耗时长短
+    function durationMinutes(dur) {
+      if (!dur) return Infinity;
+      const m = String(dur).trim().match(/^(\d+):(\d+)$/);
+      if (!m) return Infinity;
+      return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+    }
+
+    // 用"起点 + 各中转站 + 终点"构造可查询的换乘分段（保留供参考，现主要用于直达/自定义）
+    function buildTicketSegments(route) {
+      const stations = upgradeEnabled
+        ? (route.stations_upgraded || route.stations)
+        : route.stations;
+      if (!stations || stations.length < 2) return [];
+
+      const ts = route.transfer_stations || [];
+      const mids = ts.filter((t) => t !== stations[0] && t !== stations[stations.length - 1]);
+      const nodes = [stations[0], ...mids, stations[stations.length - 1]];
+      const unique = [];
+      nodes.forEach((n) => { if (unique[unique.length - 1] !== n) unique.push(n); });
+
+      const segs = [];
+      for (let i = 0; i < unique.length - 1; i++) {
+        segs.push({ from: unique[i], to: unique[i + 1] });
+      }
+      return segs;
+    }
+
+    // 方案所涉及的全部车站（用于自定义区间下拉框），保证顺序且去重
+    function routeStationSet(route) {
+      const stations = upgradeEnabled
+        ? (route.stations_upgraded || route.stations)
+        : route.stations;
+      const out = [];
+      (stations || []).forEach((s) => { if (!out.includes(s)) out.push(s); });
+      return out;
+    }
+
+    // 渲染"直达优先"区：方案起点 → 终点，一键查询直达
+    function renderDirectTickets(route) {
+      const stations = upgradeEnabled
+        ? (route.stations_upgraded || route.stations)
+        : route.stations;
+      if (!stations || stations.length < 2) return "";
+      const first = stations[0];
+      const last = stations[stations.length - 1];
+
+      return `
+        <div class="rc-direct">
+          <div class="rc-direct-title">🚉 直达优先（${first} → ${last}）</div>
+          <div class="rc-seg-row">
+            <span class="rc-seg-stations"><b>${first}</b> → <b>${last}</b></span>
+            <input type="date" class="rc-date-input" value="${defaultDate()}"
+                   min="${toDateStr(new Date())}" />
+            <button class="rc-seg-btn rc-direct-btn" data-from="${first}" data-to="${last}"
+                    onclick="event.stopPropagation(); window.__queryDirect(this)">查车次</button>
+          </div>
+          <div class="rc-direct-bar"></div>
+          <div class="rc-seg-trains"></div>
+        </div>`;
+    }
+
+    // 渲染"自定义区间"选择器：任意两站自由组合查询
+    function renderRangeSelector(route, idx) {
+      const set = routeStationSet(route);
+      if (set.length < 2) return "";
+      const first = set[0];
+      const last = set[set.length - 1];
+      const mkOpts = (cur) => set.map((s) =>
+        `<option value="${s.trim()}" ${s === cur ? "selected" : ""}>${s}</option>`).join("");
+
+      return `
+        <div class="rc-range" data-range="${idx}">
+          <div class="rc-range-title">✂ 自定义区间（任意两站，如直接查「${first}→${last}」）</div>
+          <div class="rc-range-row">
+            <select class="rc-range-select" data-role="from">${mkOpts(first)}</select>
+            <span class="sep-arrow">→</span>
+            <select class="rc-range-select" data-role="to">${mkOpts(last)}</select>
+            <input type="date" class="rc-date-input" value="${defaultDate()}"
+                   min="${toDateStr(new Date())}" />
+            <button class="rc-seg-btn" data-idx="${idx}"
+                    onclick="event.stopPropagation(); window.__queryRange(this)">查车次</button>
+          </div>
+          <div class="rc-seg-trains"></div>
+        </div>`;
+    }
+
+    // 渲染某方案的通用区间选择器（直达区独立于列表顶部处理）
+    function renderTicketSegments(route, idx) {
+      return renderRangeSelector(route, idx);
+    }
+
+    // 通用渲染查询结果到指定容器
+    // ctx: {from, to, date} —— 用于把车次钉到「已选车次」面板时记录区间与日期
+    function fillTrainResults(data, resp, box, ctx, opts) {
+      ctx = ctx || {};
+      opts = opts || {};
+      const collapsiblePrice = !!opts.collapsible;
+      const from = ctx.from || (data && data.from) || "";
+      const to = ctx.to || (data && data.to) || "";
+      const date = ctx.date || "";
+      const trains = (data && data.trains) || [];
+      if (!data || data.ok === false || !resp) {
+        box.innerHTML = `<div class="rc-train-note">⚠ ${(data && data.reason) || "查询失败（可能为货运站或服务繁忙）"}</div>`;
+      } else if (!trains.length) {
+        box.innerHTML = `<div class="rc-train-note">该区间当日无普速车次（K/Z/T/Y/纯数字），或暂无可预订车次。</div>`;
+      } else {
+        const rows = trains.map((t) => {
+          const key = trainKey(t.train_no, from, to, date);
+          const on = isPinned(key);
+          return `
+          <label class="rc-train-row${on ? " pinned" : ""}" onclick="event.stopPropagation()">
+            <input type="checkbox" class="rc-train-check" ${on ? "checked" : ""}
+                   title="勾选后钉到「已选车次」，下次查询不会清空"
+                   onchange="window.__togglePin(this)"
+                   data-key="${escAttr(key)}" data-from="${escAttr(from)}"
+                   data-to="${escAttr(to)}" data-date="${escAttr(date)}"
+                   data-train="${escAttr(t.train_no)}" data-depart="${escAttr(t.depart)}"
+                   data-arrive="${escAttr(t.arrive)}" data-duration="${escAttr(t.duration)}"
+                   data-book="${t.can_book ? 1 : 0}"
+                   data-kind="${trainKind()}" />
+            <span class="rc-train-no">${t.train_no}</span>
+            <span class="rc-train-time">${t.depart} → ${t.arrive}</span>
+            <span class="rc-train-dur">${t.duration}</span>
+            <span class="rc-train-book ${t.can_book ? "yes" : "no"}">
+              ${t.can_book ? "可预订" : "不可订"}
+            </span>
+            ${collapsiblePrice ? renderPricesFold(t) : renderPrices(t)}
+          </label>`;
+        }).join("");
+        box.innerHTML = rows;
+      }
+      box.classList.add("show");
+    }
+
+    // 是否勾选了「增加票价查询功能」
+    function priceEnabled() {
+      const cb = document.getElementById("priceInput");
+      return !!(cb && cb.checked);
+    }
+
+    // 把票价渲染成一行小标签
+    function renderPrices(t) {
+      const ps = (t && t.prices) || [];
+      if (!ps.length) return "";
+      return `<span class="rc-train-price">` + ps.map((p) => {
+        const star = p.derived ? `<sup title="无座票价与硬座/二等座相同，是铁路固定规则，由程序推导">*</sup>` : "";
+        return `<span class="rc-price-item">${p.seat}${star}<b>¥${p.price}</b></span>`;
+      }).join("") + `</span>`;
+    }
+
+    // 折叠式票价：默认收起，点「票价」才展开。
+    // 用在「直达车次」和「推荐方案」里 —— 这两处默认保持清爽。
+    // 用原生 <details> 实现，无需 JS 状态。
+    function renderPricesFold(t) {
+      const ps = (t && t.prices) || [];
+      if (!ps.length) return "";
+      const body = ps.map((p) => {
+        const star = p.derived
+          ? `<sup title="无座票价与硬座/二等座相同，是铁路固定规则，由程序推导">*</sup>` : "";
+        return `<span class="rc-price-item">${p.seat}${star}<b>¥${p.price}</b></span>`;
+      }).join("");
+      return `<details class="rc-price-fold" onclick="event.stopPropagation()">`
+        + `<summary>票价（${ps.length} 个席别）</summary>`
+        + `<div class="rc-price-fold-body">${body}</div></details>`;
+    }
+
+    // 执行一次真实查询（带后端串行限速 + 缓存 + 降级）
+    async function doFetch(from, to, date, kind, forcePrice) {
+      // forcePrice=true 用于「直达车次」与「推荐方案」：
+      // 这两处希望票价**始终可用**，但默认折叠起来，点开才看。
+      const p = (priceEnabled() || forcePrice) ? "&price=true" : "";
+      const k = `&kind=${encodeURIComponent(kind || trainKind())}`;
+      const resp = await fetch(
+        `/api/left-ticket?from_station=${encodeURIComponent(from)}` +
+        `&to_station=${encodeURIComponent(to)}&date=${encodeURIComponent(date)}${k}${p}`
+      );
+      const json = await resp.json();
+      return { resp, data: (json && json.data) || {} };
+    }
+
+    // 直达查询：结果置顶于直达区
+    window.__queryDirect = async function(btn) {
+      const from = btn.getAttribute("data-from");
+      const to = btn.getAttribute("data-to");
+      const direct = btn.closest(".rc-direct");
+      const dateInput = direct.querySelector(".rc-date-input");
+      const date = (dateInput && dateInput.value) || defaultDate();
+      const bar = direct.querySelector(".rc-direct-bar");
+      const box = direct.querySelector(".rc-seg-trains");
+
+      btn.disabled = true; btn.textContent = "查询中…";
+      bar.textContent = "正在查询该方案直达车次（优先推荐）…";
+      try {
+        const { resp, data } = await doFetch(from, to, date, null, true);
+        bar.textContent = "";
+        fillTrainResults(data, resp, box, { from, to, date }, { collapsible: true });
+      } catch (e) {
+        bar.textContent = "";
+        box.innerHTML = `<div class="rc-train-note">⚠ 查询异常：${e.message || "网络错误"}</div>`;
+        box.classList.add("show");
+      } finally {
+        btn.disabled = false; btn.textContent = "查车次";
+      }
+    };
+
+    // 自定义区间查询：用两个下拉框 + 日期 + 查车次
+    window.__queryRange = async function(btn) {
+      const range = btn.closest(".rc-range");
+      const fromSel = range.querySelector('[data-role="from"]');
+      const toSel = range.querySelector('[data-role="to"]');
+      const from = fromSel.value.trim();
+      const to = toSel.value.trim();
+      const dateInput = range.querySelector(".rc-date-input");
+      const date = (dateInput && dateInput.value) || defaultDate();
+      const box = range.querySelector(".rc-seg-trains");
+
+      if (!from || !to) return;
+      btn.disabled = true; btn.textContent = "查询中…";
+      try {
+        const { resp, data } = await doFetch(from, to, date);
+        fillTrainResults(data, resp, box, { from, to, date });
+      } catch (e) {
+        box.innerHTML = `<div class="rc-train-note">⚠ 查询异常：${e.message || "网络错误"}</div>`;
+        box.classList.add("show");
+      } finally {
+        btn.disabled = false; btn.textContent = "查车次";
+      }
+    };
+
+
+
+    // ============ 已选车次（勾选钉住，跨查询 / 刷新保留） ============
+    // 场景：用户自行设计中转方案 A-B-C。查完 A-B 勾选心仪车次后，
+    // 再查 B-C 时，A-B 的车次仍钉在面板里，方便两段对照。
+    const PIN_STORAGE_KEY = "railway_pinned_trains_v1";
+    let pinnedTrains = [];   // [{key, train_no, from, to, date, depart, arrive, duration, can_book}]
+
+    function escAttr(v) {
+      return String(v == null ? "" : v)
+        .replace(/&/g, "&amp;").replace(/"/g, "&quot;")
+        .replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+
+    // 唯一键：车次 + 区间 + 日期
+    function trainKey(no, from, to, date) {
+      return [no, from, to, date].join("|");
+    }
+
+    function loadPinned() {
+      try {
+        const raw = localStorage.getItem(PIN_STORAGE_KEY);
+        const arr = raw ? JSON.parse(raw) : [];
+        pinnedTrains = Array.isArray(arr)
+          ? arr.filter((p) => p && p.key && p.train_no)
+          : [];
+      } catch (e) {
+        pinnedTrains = [];
+      }
+    }
+
+    function savePinned() {
+      try { localStorage.setItem(PIN_STORAGE_KEY, JSON.stringify(pinnedTrains)); }
+      catch (e) { /* 隐私模式等场景下静默忽略 */ }
+    }
+
+    function isPinned(key) {
+      return pinnedTrains.some((p) => p.key === key);
+    }
+
+    // 勾选 / 取消勾选（车次行上的复选框）
+    window.__togglePin = function(cb) {
+      const key = cb.getAttribute("data-key");
+      if (cb.checked) {
+        if (!isPinned(key)) {
+          pinnedTrains.push({
+            key,
+            train_no: cb.getAttribute("data-train") || "",
+            from: cb.getAttribute("data-from") || "",
+            to: cb.getAttribute("data-to") || "",
+            date: cb.getAttribute("data-date") || "",
+            depart: cb.getAttribute("data-depart") || "",
+            arrive: cb.getAttribute("data-arrive") || "",
+            duration: cb.getAttribute("data-duration") || "",
+            can_book: cb.getAttribute("data-book") === "1",
+            kind: cb.getAttribute("data-kind") || "slow",
+          });
+        }
+      } else {
+        pinnedTrains = pinnedTrains.filter((p) => p.key !== key);
+      }
+      savePinned();
+      renderPinned();
+      syncPinCheckboxes();
+    };
+
+    // 从面板移除某条
+    window.__unpin = function(btn) {
+      const key = btn.getAttribute("data-key");
+      pinnedTrains = pinnedTrains.filter((p) => p.key !== key);
+      savePinned();
+      renderPinned();
+      syncPinCheckboxes();
+    };
+
+    window.__clearPinned = function() {
+      if (!pinnedTrains.length) return;
+      if (!confirm("确定清空「已选车次」？")) return;
+      pinnedTrains = [];
+      savePinned();
+      renderPinned();
+      syncPinCheckboxes();
+    };
+
+    window.__togglePinnedPanel = function() {
+      const panel = document.getElementById("pinnedPanel");
+      const btn = document.getElementById("pinnedToggle");
+      if (!panel) return;
+      panel.classList.toggle("collapsed");
+      if (btn) btn.textContent = panel.classList.contains("collapsed") ? "展开" : "收起";
+    };
+
+    // 让页面上所有同 key 的复选框与当前钉住状态保持一致
+    function syncPinCheckboxes() {
+      document.querySelectorAll(".rc-train-check").forEach((cb) => {
+        const on = isPinned(cb.getAttribute("data-key"));
+        cb.checked = on;
+        const row = cb.closest(".rc-train-row");
+        if (row) row.classList.toggle("pinned", on);
+      });
+    }
+
+    // 若已选车次能首尾相接（A→B 且 B→C），拼出一条换乘链提示
+    function renderChain(groups) {
+      if (groups.length < 2) return "";
+      const segs = groups.map((g) => [g.from, g.to]);
+      const chain = [segs[0][0], segs[0][1]];
+      for (let i = 1; i < segs.length; i++) {
+        if (segs[i][0] === chain[chain.length - 1]) chain.push(segs[i][1]);
+        else return "";   // 不连续，不做提示
+      }
+      if (chain.length < 3) return "";
+      return `<div class="pin-chain">换乘链：` +
+        chain.map((s) => `<b>${s}</b>`).join('<span class="sep-arrow">→</span>') +
+        `</div>`;
+    }
+
+    function renderPinned() {
+      const list = document.getElementById("pinnedList");
+      const countEl = document.getElementById("pinnedCount");
+      if (!list) return;
+      if (countEl) countEl.textContent = String(pinnedTrains.length);
+
+      if (!pinnedTrains.length) {
+        list.innerHTML =
+          '<div class="pinned-empty">查询车次后，勾选车次前的方框即可钉在这里。' +
+          '<br/><b>普速列车</b>与<b>高速动车组</b>两个页面钉住的车次会一起显示在本面板。<br/>' +
+          '钉住的车次<b>不会因下一次查询而清空</b>，方便把「A→B」和「B→C」两段拼起来对照。</div>';
+        return;
+      }
+
+      // 按「区间 + 日期」分组，保持加入顺序
+      const groups = [];
+      const seen = {};
+      pinnedTrains.forEach((p) => {
+        const gk = `${p.from}|${p.to}|${p.date}`;
+        if (!seen[gk]) {
+          seen[gk] = { from: p.from, to: p.to, date: p.date, items: [] };
+          groups.push(seen[gk]);
+        }
+        seen[gk].items.push(p);
+      });
+
+      const groupsHtml = groups.map((g) => `
+        <div class="pin-group">
+          <div class="pin-group-head">${g.from} → ${g.to}${g.date ? " · " + g.date : ""}</div>
+          ${g.items.map((p) => `
+            <div class="pin-card">
+              <span class="pin-no">${p.train_no}</span>
+              <span class="pin-kind ${p.kind === "hsr" ? "hsr" : ""}"
+                    title="${p.kind === "hsr" ? "高速动车组（G/D/C）" : "普速列车（K/Z/T/Y/数字）"}">${p.kind === "hsr" ? "高速" : "普速"}</span>
+              <span class="pin-time">${p.depart || "—"} → ${p.arrive || "—"}</span>
+              <span class="pin-dur">${p.duration || ""}</span>
+              <span class="pin-book ${p.can_book ? "yes" : "no"}">${p.can_book ? "可预订" : "不可订"}</span>
+              <button class="pin-del" title="移除" data-key="${escAttr(p.key)}"
+                      onclick="event.stopPropagation(); window.__unpin(this)">✕</button>
+            </div>`).join("")}
+        </div>`).join("");
+
+      list.innerHTML = renderChain(groups) + groupsHtml;
+    }
+
+    // ============ 直达方案（列表顶部 + 地图左侧） ============
+    // 方案渲染完成后调用：在列表顶部插入直达卡片并自动查询 起点→终点 直达车次
+    async function loadDirectCard(start, end) {
+      const list = document.getElementById("routeList");
+      const from = start.trim(), to = end.trim();
+      if (!from || !to) return;
+
+      // 移除上一次的直达卡片，避免重复
+      const old = document.getElementById("directCard");
+      if (old) old.remove();
+      // 同时移除上次的直达示意线
+      clearDirectLine();
+
+      const date = defaultDate();
+      const card = document.createElement("div");
+      card.id = "directCard";
+      card.className = "route-card";
+      card.style.borderColor = "#38a169";
+      card.style.background = "#f5fff7";
+      card.style.cursor = "default";
+      card.innerHTML = `
+        <div class="rc-head">
+          <div class="rc-left">
+            <span class="rc-badge" style="background:#38a169">直</span>
+            <span class="rc-distance" style="color:#2f855a">${from} → ${to}</span>
+            <span class="rc-tag">直达推荐</span>
+          </div>
+        </div>
+        <div class="rc-direct" style="margin-bottom:0;">
+          <div class="rc-direct-title">🚉 一键直达车次（不用换乘）</div>
+          <div class="rc-seg-row">
+            <span class="rc-seg-stations"><b>${from}</b> → <b>${to}</b></span>
+            <input type="date" class="rc-date-input" value="${date}" min="${toDateStr(new Date())}" />
+            <button class="rc-seg-btn rc-direct-btn" data-from="${from}" data-to="${to}"
+                    onclick="event.stopPropagation(); window.__directRequery(this)">重新查询</button>
+          </div>
+          <div class="rc-direct-bar" style="margin:4px 0;">正在自动查询直达车次…</div>
+          <div class="rc-seg-trains"></div>
+        </div>`;
+      list.prepend(card);
+
+      // 自动执行一次直达查询
+      await execDirectQuery(from, to, date, card);
+    }
+
+    // 执行直达查询并渲染（供 loadDirectCard 与 __directRequery 共用）
+    async function execDirectQuery(from, to, date, card) {
+      const bar = card.querySelector(".rc-direct-bar");
+      const box = card.querySelector(".rc-seg-trains");
+      bar.textContent = "正在自动查询直达车次…";
+      try {
+        const { resp, data } = await doFetch(from, to, date, null, true);
+        const trains = (data && data.trains) || [];
+                if (data && data.ok !== false && trains.length) {
+          bar.textContent = `✓ 共 ${trains.length} 趟直达车次`;
+          fillTrainResults(data, resp, box, { from, to, date }, { collapsible: true });
+          // 地图上沿"真实经停站"画出直达线路（绿色），失败则退回起终点示意线
+          drawRealRail(from, to, data, box);
+        } else if (data && data.ok === false) {
+          bar.textContent = "";
+          box.innerHTML = `<div class="rc-train-note">⚠ ${data.reason || "查询失败"}</div>`;
+          box.classList.add("show");
+          card.style.opacity = "0.7";
+        } else {
+          bar.textContent = "";
+          box.innerHTML = `<div class="rc-train-note">该区间当日无直达普速车次，需中途换乘（见下方中转方案）。</div>`;
+          box.classList.add("show");
+          card.style.opacity = "0.7";
+        }
+      } catch (e) {
+        bar.textContent = "";
+        box.innerHTML = `<div class="rc-train-note">⚠ 直达查询异常：${e.message || "网络错误"}</div>`;
+        box.classList.add("show");
+      }
+    }
+
+    // 重新查询（用户改日期后手动点击）
+    window.__directRequery = async function(btn) {
+      const card = btn.closest("#directCard");
+      const dateInput = card.querySelector(".rc-date-input");
+      const date = (dateInput && dateInput.value) || defaultDate();
+      const from = btn.getAttribute("data-from");
+      const to = btn.getAttribute("data-to");
+      btn.disabled = true; btn.textContent = "查询中…";
+      await execDirectQuery(from, to, date, card);
+      btn.disabled = false; btn.textContent = "重新查询";
+    };
+
+        // ================= 直达线路：沿真实经停站绘制（绿色） =================
+    let directLineRef = null;
+
+    function clearDirectLine() {
+      if (directLineRef && layerGroup && layerGroup.hasLayer(directLineRef)) {
+        layerGroup.removeLayer(directLineRef);
+      }
+      directLineRef = null;
+    }
+
+    // 降级：仅有起终点坐标时，画一条绿色虚线示意
+    function drawDirectLine(from, to) {
+      const fc = stationCoords[from], tc = stationCoords[to];
+      if (!fc || !tc || !map) return;
+      const line = L.polyline([[fc[1], fc[0]], [tc[1], tc[0]]], {
+        color: "#38a169", weight: 4, dashArray: "8 6", opacity: 0.9,
+      }).addTo(layerGroup);
+      directLineRef = line;
+      line.on("click", function() {
+        const card = document.getElementById("directCard");
+        if (card) card.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    }
+
+    // 查询直达车次真实经停站并沿其绘制绿色线路。
+    // data: /api/left-ticket 返回的 {trains:[...]}; box: 直达卡片结果容器
+    async function drawRealRail(from, to, data, box) {
+      clearDirectLine();
+      if (!map) return;
+
+            const trains = (data && data.trains) || [];
+      if (!trains.length) { drawDirectLine(from, to); return; }
+
+      // 直达可能有多趟：选"耗用时长(运行时间)最短"的一趟来展示真实经停站
+      let best = trains[0];
+      let bestMin = durationMinutes(best.duration);
+      for (let i = 1; i < trains.length; i++) {
+        const m = durationMinutes(trains[i].duration);
+        if (m < bestMin) { best = trains[i]; bestMin = m; }
+      }
+
+      let payload = null;
+      try {
+        const resp = await fetch(`/api/train/stops?train_no=${encodeURIComponent(best.train_no)}`);
+        const json = await resp.json();
+        payload = (json && json.data) || null;
+      } catch (e) {
+        payload = null;
+      }
+
+      if (!payload || payload.ok !== true || !Array.isArray(payload.stops) || !payload.stops.length) {
+        // 查询真实经停站失败：退回起终点虚线示意
+        drawDirectLine(from, to);
+        return;
+      }
+
+      // 在全程站序中截取 [from .. to] 之间的一段（携程返回的是全程站序）
+      let stops = payload.stops.filter((s) => s && s.lon != null && s.lat != null);
+      if (stops.length < 2) { drawDirectLine(from, to); return; }
+
+      const idxFrom = stops.findIndex((s) => s.name === from);
+      const idxTo = stops.findIndex((s) => s.name === to);
+      if (idxFrom !== -1 && idxTo !== -1) {
+        const a = Math.min(idxFrom, idxTo);
+        const b = Math.max(idxFrom, idxTo) + 1;
+        stops = stops.slice(a, b);
+      }
+      if (stops.length < 2) { drawDirectLine(from, to); return; }
+
+      // 中途站点只展示"特等站 / 一等站 / 二等站"（等级来自 route_planner 站点库；
+      // 查不到等级或三等级以下的站不在地图上重点展示，避免小站噪音）
+      const showGrades = ["特等站", "一等站", "二等站"];
+      stops = stops.filter((s, i) => {
+        // 起点与终点始终保留；中途中只保留特等/一等/二等站
+        if (i === 0 || i === stops.length - 1) return true;
+        return showGrades.indexOf(s.grade) !== -1;
+      });
+      if (stops.length < 2) { drawDirectLine(from, to); return; }
+
+      // 沿真实经停站连成折线（绿色实线）
+      const latlngs = stops.map((s) => [s.lat, s.lon]);
+      const line = L.polyline(latlngs, {
+        color: "#38a169", weight: 4, opacity: 0.95,
+      }).addTo(layerGroup);
+      directLineRef = line;
+
+      // 在每个经停站画绿色圆点，点击可查看站名 / 到开时间
+      stops.forEach((s, i) => {
+        const t = (s.arrive || "") + " 开:" + (s.depart || "");
+        const role = i === 0 ? "起点" : (i === stops.length - 1 ? "终点" : "经停");
+        L.circleMarker([s.lat, s.lon], {
+          radius: 4, color: "#38a169", weight: 2,
+          fillColor: "#38a169", fillOpacity: 0.85,
+        }).addTo(layerGroup).bindPopup(
+          `<b style="color:#2f855a">${payload.train} ${s.name}</b><br/>` +
+          `<span style="color:#718096">${role} · 到:${s.arrive || "—"} · 开:${s.depart || "—"}</span>`
+        );
+      });
+
+      line.on("click", function() {
+        const card = document.getElementById("directCard");
+        if (card) card.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+
+      // 视野适当聚焦到直达线路（不强行，保留整体方案视野）
+      try { map.fitBounds(L.latLngBounds(latlngs).pad(0.1)); } catch (_) {}
+    }
+
+    // ============ 错误 / 查询 ============
+    function showError(msg) {
+      const box = document.getElementById("errorBox");
+      box.textContent = msg;
+      box.style.display = "block";
+      document.getElementById("routeList").innerHTML =
+        '<div class="empty-text">查询无结果</div>';
+    }
+    function clearError() {
+      document.getElementById("errorBox").style.display = "none";
+    }
+
+    async function searchRoute() {
+      clearError();
+      const start = document.getElementById("startInput").value.trim();
+      const end = document.getElementById("endInput").value.trim();
+      const via = document.getElementById("viaInput").value.trim();
+      const k = parseInt(document.getElementById("kInput").value, 10) || 3;
+      const btn = document.getElementById("searchBtn");
+
+      if (!start || !end) {
+        showError("请输入起点和终点。");
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = "查询中…";
+      const list = document.getElementById("routeList");
+      list.innerHTML = '<div class="loading-text">正在计算中转方案，请稍候…</div>';
+
+      try {
+        let url;
+        if (via) {
+          // 定制中转：强制经过用户指定的中转站
+          url = `${apiBase()}/routes/via?start=${encodeURIComponent(start)}`
+            + `&end=${encodeURIComponent(end)}`
+            + `&via=${encodeURIComponent(via)}&k=${k}`;
+        } else {
+          url = `${apiBase()}/routes?start=${encodeURIComponent(start)}`
+            + `&end=${encodeURIComponent(end)}&k=${k}`;
+        }
+        const resp = await fetch(url);
+
+        if (!resp.ok) {
+          let msg = `请求失败（HTTP ${resp.status}）`;
+          try {
+            const err = await resp.json();
+            if (err && err.detail) msg = err.detail;
+          } catch (_) {}
+          throw new Error(msg);
+        }
+
+        const json = await resp.json();
+        currentRoutes = json.data;
+        activeIndex = 0;
+
+        if (!isMapInit) { initMap(); isMapInit = true; }
+        if (Object.keys(stationCoords).length === 0) await loadStations();
+
+        renderRoutes(currentRoutes);
+        renderRouteList(currentRoutes);
+
+        // 直达优先：在方案列表顶部自动展示并查询 起点→终点 直达车次
+        loadDirectCard(start, end);
+      } catch (e) {
+        showError(e.message || "查询失败，请稍后再试。");
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "查询方案";
+      }
+    }
+
+    // ============ 线路管理：打开 / 关闭独立界面 ============
+    function openLineModal() {
+      document.getElementById("lineModal").style.display = "flex";
+      // 用户没在框里改过内容 → 每次都重新从磁盘加载，
+      // 以便反映在外部（记事本）对 main_railway_line.txt 的修改；
+      // 已改过则保留其编辑，避免把用户的改动冲掉。
+      if (!lineEditorDirty) loadLineToEditor();
+      refreshAutoCoordHint();
+      refreshSameCityHint();
+      refreshStationCodeHint();
+    }
+    function closeLineModal() {
+      document.getElementById("lineModal").style.display = "none";
+    }
+
+    // ============ 线路管理（本地铁路线更新） ============
+    // 用户是否在编辑框里改过内容。
+    // 未改过时，每次打开弹窗都从磁盘重新读取 —— 这样用记事本改了
+    // main_railway_line.txt 后回到网页能立刻看到最新内容，不会拿着
+    // 旧文本去「保存并重新生成」而把外部修改覆盖掉。
+    let lineEditorDirty = false;
+
+    async function loadLineToEditor() {
+      const editor = document.getElementById("lineEditor");
+      const fb = document.getElementById("lineFeedback");
+      fb.style.color = "#2b6cb0";
+      fb.textContent = "正在加载 main_railway_line.txt …";
+      try {
+        const resp = await fetch("/api/line/current");
+        const json = await resp.json();
+        if (!resp.ok) {
+          throw new Error((json && json.detail) || `请求失败（HTTP ${resp.status}）`);
+        }
+        editor.value = json.content;
+        lineEditorDirty = false;   // 刚从磁盘加载，视为未修改
+        fb.style.color = "#2f855a";
+        fb.textContent = `已加载：${json.line_count} 条线路（文件：${json.file}）。可直接编辑后保存。`;
+      } catch (e) {
+        fb.style.color = "#c53030";
+        fb.textContent = "加载失败：" + (e.message || "未知错误");
+      }
+    }
+
+    function showLineFeedback(msg, ok) {
+      const fb = document.getElementById("lineFeedback");
+      fb.style.color = ok === "warn" ? "#c05621" : (ok ? "#2f855a" : "#c53030");
+      fb.textContent = msg;
+    }
+
+    // 读取同城异站归并情况，显示在「线路管理」里
+    async function refreshSameCityHint() {
+      const hint = document.getElementById("sameCityHint");
+      const list = document.getElementById("sameCityList");
+      if (!hint) return;
+      try {
+        const resp = await fetch("/api/same-city");
+        const json = await resp.json();
+        const d = (json && json.data) || {};
+        const auto = d.auto_merged || [];
+        const cand = d.candidates || [];
+
+        const autoText = auto.length
+          ? `自动归并 ${auto.length} 对：${auto.map((x) => `${x.station}→${x.city}`).join("、")}`
+          : "本次没有需要自动归并的站对（同名前缀站已全部归并）";
+        hint.className = cand.length ? "line-opt-hint warn" : "line-opt-hint ok";
+        hint.textContent = `${autoText}；另有 ${cand.length} 处邻近站对待确认`;
+
+        if (list) {
+          list.innerHTML = cand.length
+            ? cand.map((c) => {
+                const far = c.distance_km >= 18;
+                return `<div class="${far ? "far" : ""}">${c.distance_km} km ｜ ${c.a} — ${c.b}`
+                  + (far ? "（距离较大，多为不同城市，勿轻易合并）" : "") + `</div>`;
+              }).join("")
+              + `<div style="margin-top:6px;color:#718096">确认确属同城后，把「"站名": "城市名"」`
+              + `加进 <code>same_city.json</code> 的 manual 里，再点「从文件重新生成」。</div>`
+            : "<div>（无）</div>";
+        }
+      } catch (e) {
+        hint.className = "line-opt-hint";
+        hint.textContent = "";
+      }
+    }
+
+    // 读取电报码覆盖情况：没有电报码的站查不到 12306 车次
+    async function refreshStationCodeHint() {
+      const hint = document.getElementById("stationCodeHint");
+      const list = document.getElementById("stationCodeList");
+      if (!hint) return;
+      try {
+        const resp = await fetch("/api/station-codes");
+        const json = await resp.json();
+        const d = (json && json.data) || {};
+        const miss = d.missing || [];
+        hint.className = miss.length ? "line-opt-hint warn" : "line-opt-hint ok";
+        hint.textContent = miss.length
+          ? `${d.with_code}/${d.total} 个站有电报码；${miss.length} 个站没有（查不到 12306 车次）`
+          : `全部 ${d.total} 个站都有电报码`;
+        if (list) {
+          list.innerHTML = miss.length
+            ? miss.map((s) => `<div>${s}</div>`).join("")
+              + `<div style="margin-top:6px;color:#718096">12306 余票接口只认电报码、不认中文站名，`
+              + `所以这些站查不到车次。多为货运/技术站，本身没有客运码，属正常。</div>`
+            : "<div>（无）</div>";
+        }
+      } catch (e) {
+        hint.className = "line-opt-hint";
+        hint.textContent = "";
+      }
+    }
+
+    // 是否勾选了「启用在线地理坐标补全」
+    function autoCoordOn() {
+      const cb = document.getElementById("autoCoordInput");
+      return !!(cb && cb.checked);
+    }
+
+    // 把后端返回的补全结果整理成一段可读的反馈
+    function describeAutofill(d) {
+      const a = (d && d.autofill) || {};
+      const lines = [];
+      if (a.skipped) {
+        lines.push(`在线补全：未调用（${a.skipped}）`);
+      } else {
+        const req = a.requested || [], ok = a.filled || [], bad = a.failed || [];
+        lines.push(`在线补全：尝试 ${req.length} 个站，成功 ${ok.length} 个`
+          + (bad.length ? `，仍失败 ${bad.length} 个` : ""));
+        if (ok.length) lines.push(`  已补全：${ok.join("、")}`);
+        if (bad.length) lines.push(`  仍缺坐标：${bad.join("、")}`);
+        if (a.error) lines.push(`  出错：${a.error}`);
+      }
+      const miss = (d && d.missing_coords) || [];
+      if (miss.length) {
+        lines.push(`⚠ ${miss.length} 个站点因缺少坐标暂未接入路网：${miss.join("、")}`);
+        lines.push("  这些站不参与算路（因此不会产生错误里程），补全坐标后自动恢复。");
+      }
+      return lines.join("\n");
+    }
+
+    // 把「相邻站间距异常大」的区间整理成提示（只报告，不自动改数据）
+    function describeSuspects(list) {
+      if (!list || !list.length) return "";
+      const lines = [`⚠ ${list.length} 处相邻站间距异常大，请确认坐标是否正确：`];
+      list.slice(0, 5).forEach((e) => {
+        lines.push(`  ${e.from} — ${e.to}：${e.distance_km} km（${e.line || "未知线路"}）`);
+      });
+      if (list.length > 5) lines.push(`  …另有 ${list.length - 5} 处，详见 /api/coords/status`);
+      lines.push("  说明：兰新线、青藏线本身就有 800~1500km 的长区间，属正常；");
+      lines.push("        若出现在短途支线上，多为地名被解析到异地同名，需修正坐标。");
+      return lines.join("\n");
+    }
+
+    // 读取 Key 配置状态 + 当前缺坐标站点，显示在开关下方
+    async function refreshAutoCoordHint() {
+      const hint = document.getElementById("autoCoordHint");
+      if (!hint) return;
+      try {
+        const resp = await fetch("/api/coords/status");
+        const json = await resp.json();
+        const d = (json && json.data) || {};
+        const miss = d.missing || [];
+        const susp = d.suspect_edges || [];
+        const missText = miss.length
+          ? `当前有 ${miss.length} 个站缺坐标：${miss.join("、")}`
+          : "当前所有站点坐标齐全";
+        const suspText = susp.length ? `；另有 ${susp.length} 处超长区间待确认` : "";
+        if (d.key_configured) {
+          hint.className = "line-opt-hint ok";
+          hint.textContent = `✓ 已检测到 ${d.provider} 服务端 AK；${missText}${suspText}`;
+        } else {
+          hint.className = "line-opt-hint warn";
+          hint.textContent = "⚠ 未检测到 Key：请把百度服务端 AK 设为系统环境变量 BAIDU_AK 后重启服务；"
+            + missText + suspText;
+        }
+      } catch (e) {
+        hint.className = "line-opt-hint";
+        hint.textContent = "";
+      }
+    }
+
+    async function saveLines() {
+      const editor = document.getElementById("lineEditor");
+      const content = editor.value;
+      const btn = document.getElementById("saveLineBtn");
+      if (!content.trim()) { showLineFeedback("内容为空，未保存。", false); return; }
+
+      btn.disabled = true;
+      btn.textContent = "保存并重算中…";
+      const wantCoord = autoCoordOn();
+      showLineFeedback(
+        "正在写回线路文件并重新生成路网…" + (wantCoord ? "（将尝试在线补全缺坐标站点）" : ""),
+        true
+      );
+      try {
+        const resp = await fetch("/api/line/update", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content, auto_coord: wantCoord }),
+        });
+        const json = await resp.json();
+        if (!resp.ok) {
+          throw new Error((json && json.detail) || `请求失败（HTTP ${resp.status}）`);
+        }
+        const d = json.data;
+        const miss = d.missing_coords || [];
+        const susp = d.suspect_edges || [];
+        const suspText = describeSuspects(susp);
+        lineEditorDirty = false;   // 已写回磁盘，编辑框内容与文件一致
+        showLineFeedback(
+          `✓ 已保存并生效：共 ${d.station_count} 个站点、${d.edge_count} 条连接。` +
+          `\n${d.message || ""}\n${describeAutofill(d)}` +
+          (suspText ? `\n${suspText}` : "") +
+          `\n现在地图 / 查询已使用最新路网数据。`,
+          (miss.length || susp.length) ? "warn" : true
+        );
+        // 数据已更新，刷新站点坐标与地图站点目录
+        await loadStations();
+        if (currentRoutes.length) {
+          renderRoutes(currentRoutes);
+          renderRouteList(currentRoutes);
+        }
+        refreshAutoCoordHint();
+        refreshSameCityHint();
+        refreshStationCodeHint();
+        // 作废「线路总览」缓存，否则新增的线路在总览里看不到
+        await invalidateOverview();
+      } catch (e) {
+        showLineFeedback("保存失败：" + (e.message || "未知错误"), false);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "保存并重新生成";
+      }
+    }
+
+    async function rebuildLines() {
+      const btn = document.getElementById("rebuildBtn");
+      btn.disabled = true;
+      btn.textContent = "正在重新生成…";
+      const wantCoord = autoCoordOn();
+      showLineFeedback(
+        "正在从 main_railway_line.txt 重新生成路网…" + (wantCoord ? "（将尝试在线补全缺坐标站点）" : ""),
+        true
+      );
+      try {
+        const resp = await fetch(
+          `/api/line/rebuild?auto_coord=${wantCoord ? "true" : "false"}`,
+          { method: "POST" }
+        );
+        const json = await resp.json();
+        if (!resp.ok) {
+          throw new Error((json && json.detail) || `请求失败（HTTP ${resp.status}）`);
+        }
+        const d = json.data;
+        const miss = d.missing_coords || [];
+        const susp = d.suspect_edges || [];
+        const suspText = describeSuspects(susp);
+        showLineFeedback(
+          `✓ 已重新生成并生效：共 ${d.station_count} 个站点、${d.edge_count} 条连接。` +
+          `\n${describeAutofill(d)}` +
+          (suspText ? `\n${suspText}` : ""),
+          (miss.length || susp.length) ? "warn" : true
+        );
+        await loadStations();
+        if (currentRoutes.length) {
+          renderRoutes(currentRoutes);
+          renderRouteList(currentRoutes);
+        }
+        refreshAutoCoordHint();
+        refreshSameCityHint();
+        refreshStationCodeHint();
+        // 作废「线路总览」缓存，否则新增的线路在总览里看不到
+        await invalidateOverview();
+      } catch (e) {
+        showLineFeedback("重新生成失败：" + (e.message || "未知错误"), false);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "从文件重新生成";
+      }
+    }
+
+    // ============ 线路总览（地图直绘） ============
+    let lineOverview = [];   // 全量线路数据
+    let ovActive = false;    // 是否正在显示总览
+    let ovLayer = null;      // 总览图层组
+    let ovPolys = {};        // 线名 -> 该线图层组
+    let ovSkipped = [];      // 因站点缺坐标而画不出来的线路名
+
+    const OV_COLORS = [
+      "#e53e3e","#2b6cb0","#38a169","#dd6b20","#805ad5","#d53f8c","#3182ce",
+      "#6b46c1","#c05621","#2f855a","#d69e2e","#319795","#16a34a","#4c51bf",
+      "#7c3aed","#0f766e","#b45309","#9d174d","#2563eb","#047857","#e11d48",
+      "#15803d","#4338ca","#be185d","#0ea5e9","#84cc16","#12372a","#f97316",
+      "#6366f1","#db2777","#059669","#7e22ce","#a16207","#10b981","#134e4a",
+      "#d97706","#8b5cf6","#ef4444","#3b82f6","#22c55e","#f59e0b","#ec4899",
+      "#a21caf","#16a1a1","#78350f","#1e3a8a","#065f46","#b91c1c"
+    ];
+
+    // 拉取全量线路数据（供「线路总览」使用）
+    async function loadLineOverview() {
+      const resp = await fetch(isHsr() ? "/api/hsr/corridors" : "/api/line/list");
+      const json = await resp.json();
+      if (!resp.ok) throw new Error((json && json.detail) || "请求失败");
+      lineOverview = json.data || [];
+      return lineOverview;
+    }
+
+    // 线路数据发生变化（保存 / 重新生成）后调用。
+    // 必须作废 lineOverview 缓存，否则「线路总览」会一直显示旧列表，
+    // 新增的线路既画不出来、图例里也没有 —— 这正是「新加的线看不到」的原因。
+    async function invalidateOverview() {
+      lineOverview = [];
+      if (!ovActive) return;   // 没在看总览：作废即可，下次打开会重新拉取
+      try {
+        await loadLineOverview();
+        // 先移除旧的总览图层，避免重绘后新旧叠加
+        if (ovLayer && map) { map.removeLayer(ovLayer); ovLayer = null; ovPolys = {}; }
+        drawAllLines();
+      } catch (e) {
+        clearOvMap();
+      }
+    }
+
+    async function toggleAllLines() {
+      if (!isMapInit) { initMap(); isMapInit = true; }
+      const btn = document.getElementById("openOvBtn");
+      if (ovActive) { clearOvMap(); return; }
+      if (!lineOverview.length) {
+        btn.textContent = "加载中…";
+        try {
+          await loadLineOverview();
+        } catch (e) {
+          btn.textContent = "线路总览";
+          alert("加载线路失败：" + (e.message || "未知错误"));
+          return;
+        }
+      }
+      drawAllLines();
+    }
+
+    function drawAllLines() {
+      if (!map) return;
+      // 清空此前查询方案图层，使总览单独展示
+      if (layerGroup) layerGroup.clearLayers();
+      ovLayer = L.layerGroup().addTo(map);
+      ovPolys = {};
+      const bounds = [];
+      // 记录画不出来的线路（站点缺坐标），在图例里提示，避免"看不到"却不知原因
+      ovSkipped = [];
+
+      lineOverview.forEach((line, idx) => {
+        const color = OV_COLORS[idx % OV_COLORS.length];
+        const latlngs = (line.coords || []).filter(Boolean).map((c) => [c[1], c[0]]);
+        if (!latlngs.length) { ovSkipped.push(line.name); return; }
+        const g = L.layerGroup().addTo(ovLayer);
+        L.polyline(latlngs, { color, weight: 3, opacity: 0.85 }).addTo(g);
+        ovPolys[line.name] = g;
+        (line.coords || []).forEach((c, i) => {
+          if (!c) return;
+          L.circleMarker([c[1], c[0]], {
+            radius: 4, color: "#fff", weight: 1, fillColor: color, fillOpacity: 0.9,
+          }).addTo(g).bindPopup(`<b>${line.stations[i]}</b><br/><span style="color:${color}">${line.name}</span>`);
+        });
+        latlngs.forEach((v) => bounds.push(v));
+      });
+
+      if (bounds.length) map.fitBounds(L.latLngBounds(bounds).pad(0.06));
+      const btn = document.getElementById("openOvBtn");
+      if (btn) btn.textContent = "关闭总览";
+      ovActive = true;
+      showOvLegend();
+      if (typeof loadStations === "function") loadStations();
+    }
+
+        function showOvLegend() {
+      const legend = document.getElementById("ovLegend");
+      legend.style.display = "block";
+      legend.innerHTML =
+        '<div class="ov-legend-title"><span>铁路线路图例</span>' +
+          '<span class="ov-legend-ctrls">' +
+            '<button class="ov-legend-ctrl" id="ovShowAll">全显</button>' +
+            '<button class="ov-legend-ctrl" id="ovHideAll">全隐</button>' +
+          '</span></div>';
+      document.getElementById("ovShowAll").addEventListener("click", ovShowAll);
+      document.getElementById("ovHideAll").addEventListener("click", ovHideAll);
+      lineOverview.forEach((line, idx) => {
+        const color = OV_COLORS[idx % OV_COLORS.length];
+        const item = document.createElement("div");
+        item.className = "ov-legend-item";
+        item.innerHTML = `<span class="ov-legend-swatch" style="background:${color}"></span><span class="ov-legend-name">${line.name}</span>`;
+        item.addEventListener("click", () => {
+          const g = ovPolys[line.name];
+          if (!g) return;
+          if (map.hasLayer(g)) { map.removeLayer(g); item.classList.add("off"); }
+          else { g.addTo(ovLayer); item.classList.remove("off"); }
+        });
+        legend.appendChild(item);
+      });
+
+      // 有线路因站点缺坐标画不出来时，在图例末尾说明原因
+      if (ovSkipped.length) {
+        const warn = document.createElement("div");
+        warn.className = "ov-legend-warn";
+        warn.textContent = `⚠ ${ovSkipped.length} 条线未显示（站点缺坐标）：`
+          + ovSkipped.join("、");
+        legend.appendChild(warn);
+      }
+    }
+
+    // 一键全显 / 全隐所有线路
+    function ovShowAll() {
+      Object.values(ovPolys).forEach((g) => { if (!map.hasLayer(g)) g.addTo(ovLayer); });
+      document.querySelectorAll(".ov-legend-item").forEach((i) => i.classList.remove("off"));
+    }
+    function ovHideAll() {
+      Object.values(ovPolys).forEach((g) => { if (map.hasLayer(g)) map.removeLayer(g); });
+      document.querySelectorAll(".ov-legend-item").forEach((i) => i.classList.add("off"));
+    }
+
+    function clearOvMap() {
+      const btn = document.getElementById("openOvBtn");
+      if (btn) btn.textContent = "线路总览";
+      if (ovLayer && map) { map.removeLayer(ovLayer); ovLayer = null; ovPolys = {}; }
+      const legend = document.getElementById("ovLegend");
+      if (legend) { legend.style.display = "none"; legend.innerHTML = ""; }
+      ovActive = false;
+      // 还原当前查询方案的地图
+      if (currentRoutes.length) renderRoutes(currentRoutes);
+      else if (layerGroup) layerGroup.clearLayers();
+    }
+
+    // ============ 事件绑定 ============
+    document.getElementById("searchBtn").addEventListener("click", searchRoute);
+    document.getElementById("pinnedToggle").addEventListener("click", window.__togglePinnedPanel);
+    document.getElementById("pinnedClear").addEventListener("click", window.__clearPinned);
+    document.getElementById("openLineBtn").addEventListener("click", openLineModal);
+    document.getElementById("closeLineBtn").addEventListener("click", closeLineModal);
+
+    // ============ 推荐方案（直达 + 中转，接续 >= 1 小时） ============
+    function renderRecommend(d, start, end, date) {
+      const box = document.getElementById("recommendBox");
+      const parts = [];
+      const minT = d.min_transfer_minutes || 60;
+      parts.push(`<h4>推荐方案：${start} → ${end}${date ? " · " + date : ""}`
+        + `<span class="rc-muted" style="font-weight:400">　（中转接续不少于 ${minT} 分钟）</span></h4>`);
+      (d.direct || []).forEach((t) => {
+        parts.push(`<div class="rc-row"><span class="rc-tag">直达</span>`
+          + `<span class="rc-train">${t.train_no}</span>`
+          + `<span>${t.depart} → ${t.arrive}</span>`
+          + `<span class="rc-muted">${t.duration}</span>`
+          + `<span class="rc-muted">${t.advice || ""}</span>`
+          + renderPricesFold(t) + `</div>`);
+      });
+      (d.transfers || []).forEach((x) => {
+        const l1 = x.leg1, l2 = x.leg2;
+        const hh = Math.floor(x.transfer_minutes / 60);
+        const mm = String(x.transfer_minutes % 60).padStart(2, "0");
+        parts.push(`<div class="rc-row"><span class="rc-tag transfer">中转</span>`
+          + `<span class="rc-train">${l1.train_no}</span>`
+          + `<span>${l1.depart}→${l1.arrive}</span>`
+          + `<span class="rc-muted">＋</span>`
+          + `<span class="rc-train">${l2.train_no}</span>`
+          + `<span>${l2.depart}→${l2.arrive}${x.next_day ? "(次日)" : ""}</span>`
+          + `<span class="rc-muted">经 ${x.hub}，接续 ${hh}h${mm}m</span>`
+          + renderPricesFold(l1) + renderPricesFold(l2) + `</div>`);
+      });
+      if (!(d.direct || []).length && !(d.transfers || []).length) {
+        parts.push(`<div class="rc-err">${d.reason || "未找到合适的直达或中转方案"}</div>`);
+      }
+      box.innerHTML = parts.join("");
+    }
+
+    window.__recommend = async function() {
+      const start = document.getElementById("startInput").value.trim();
+      const end = document.getElementById("endInput").value.trim();
+      const box = document.getElementById("recommendBox");
+      const btn = document.getElementById("recommendBtn");
+      if (!start || !end) { showError("请先填写起点与终点"); return; }
+      const date = defaultDate();
+      btn.disabled = true; btn.textContent = "推荐中…";
+      box.style.display = "block";
+      box.innerHTML = `<h4>正在推荐…</h4><div class="rc-muted">`
+        + `先查直达，再逐个枢纽查中转（含次日接续），受 12306 串行限速影响约需 10 秒。</div>`;
+      try {
+        const p = "&price=true";   // 推荐面板的票价默认折叠，始终带上
+        // ⚠ 这里**不能用 apiBase()**：apiBase() 在高速模式下返回 /api/hsr，
+        // 但推荐方案是**单一端点**、靠 kind 参数区分普速/高速，
+        // 后端并没有 /api/hsr/recommend 这条路由（会 404）。
+        const resp = await fetch(`/api/recommend`
+          + `?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`
+          + `&date=${encodeURIComponent(date)}&kind=${trainKind()}${p}`);
+        const json = await resp.json();
+        if (!resp.ok) throw new Error((json && json.detail) || `请求失败（HTTP ${resp.status}）`);
+        renderRecommend(json.data, start, end, date);
+      } catch (e) {
+        box.innerHTML = `<h4>推荐失败</h4><div class="rc-err">${e.message || "未知错误"}</div>`;
+      } finally {
+        btn.disabled = false; btn.textContent = "推荐方案";
+      }
+    };
+
+    document.getElementById("loadLineBtn").addEventListener("click", loadLineToEditor);
+    document.getElementById("recommendBtn").addEventListener("click", window.__recommend);
+
+    // ============ 动态加站（临时，仅内存生效） ============
+    // 后端 /api/station/add 会把新站作为独立节点加入图，并自动连到最近的大城。
+    // 注意：route_planner.add_station 是**只改内存**的，重启服务即失效 ——
+    // 提示语里必须讲清楚，否则用户会以为已经永久保存了。
+    window.__addStation = async function() {
+      const name = (document.getElementById("asName").value || "").trim();
+      const lonS = (document.getElementById("asLon").value || "").trim();
+      const latS = (document.getElementById("asLat").value || "").trim();
+      const grade = document.getElementById("asGrade").value;
+      const hint = document.getElementById("addStationHint");
+      const btn = document.getElementById("addStationBtn");
+
+      const show = (msg, cls) => {
+        hint.className = "line-opt-hint " + (cls || "");
+        hint.innerHTML = msg;
+      };
+
+      if (!name) { show("请填写站名。", "err"); return; }
+      const lon = Number(lonS), lat = Number(latS);
+      if (!lonS || !latS || Number.isNaN(lon) || Number.isNaN(lat)) {
+        show("经度 / 纬度必须是数字。", "err"); return;
+      }
+      if (lon < -180 || lon > 180) { show("经度需在 -180 ~ 180 之间。", "err"); return; }
+      if (lat < -90 || lat > 90) { show("纬度需在 -90 ~ 90 之间。", "err"); return; }
+
+      btn.disabled = true; btn.textContent = "添加中…";
+      try {
+        const resp = await fetch("/api/station/add", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, lon, lat, grade }),
+        });
+        const json = await resp.json();
+        if (!resp.ok) throw new Error((json && json.detail) || `请求失败（HTTP ${resp.status}）`);
+        const d = json.data || {};
+        if (d.added) {
+          show(`✓ ${d.msg}。现在可以直接查询该站。<br/>`
+            + `<span style="color:#c05621">⚠ 仅本次运行有效，重启服务后需重新添加。</span>`, "ok");
+          // 坐标表变了，刷新一下站点坐标，让地图/下拉能看到新站
+          await loadStations();
+        } else {
+          show(`⚠ ${d.msg}`, "err");
+        }
+      } catch (e) {
+        show("添加失败：" + (e.message || "未知错误"), "err");
+      } finally {
+        btn.disabled = false; btn.textContent = "加站";
+      }
+    };
+    document.getElementById("addStationBtn").addEventListener("click", window.__addStation);
+    // 页面切换：普速列车 / 高速动车组
+    document.querySelectorAll(".mode-tab").forEach((b) => {
+      b.addEventListener("click", () => setMode(b.getAttribute("data-mode")));
+    });
+    applyModeText();
+    // 编辑框被改动 → 标记 dirty，避免自动重新加载把用户的编辑冲掉
+    document.getElementById("lineEditor").addEventListener("input", () => {
+      lineEditorDirty = true;
+    });
+    document.getElementById("saveLineBtn").addEventListener("click", saveLines);
+    document.getElementById("rebuildBtn").addEventListener("click", rebuildLines);
+        document.getElementById("openOvBtn").addEventListener("click", toggleAllLines);
+    // 点击弹窗背景关闭
+    document.getElementById("lineModal").addEventListener("click", (e) => {
+      if (e.target === e.currentTarget) closeLineModal();
+    });
+    // Esc：关闭线路管理弹窗；若正在显示总览则清除
+    document.addEventListener("keydown", (e) => {
+      if (e.key !== "Escape") return;
+      const lm = document.getElementById("lineModal");
+      if (lm && lm.style.display === "flex") { closeLineModal(); return; }
+      if (ovActive) clearOvMap();
+    });
+    document.getElementById("upgradeInput").addEventListener("change", (e) => {
+      upgradeEnabled = e.target.checked;
+      if (currentRoutes.length) {
+        renderRouteList(currentRoutes);
+        renderRoutes(currentRoutes);  // 省会化后地图也跟随变化
+      }
+    });
+    document.getElementById("startInput").addEventListener("keydown", (e) => { if (e.key === "Enter") searchRoute(); });
+    document.getElementById("endInput").addEventListener("keydown", (e) => { if (e.key === "Enter") searchRoute(); });
+    document.getElementById("viaInput").addEventListener("keydown", (e) => { if (e.key === "Enter") searchRoute(); });
+
+    // ============ 首次加载 ============
+    (async function init() {
+      loadPinned();
+      renderPinned();
+      await loadStations();
+      initMap();
+      isMapInit = true;
+      searchRoute();
+    })();
+  </script>
+</body>
+</html>
